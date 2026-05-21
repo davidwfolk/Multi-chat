@@ -6,6 +6,39 @@ const { WebcastPushConnection } = require('tiktok-live-connector');
 const fetch = require('node-fetch');
 const { LiveChat } = require('youtube-chat');
 
+function escapeHTML(str) {
+  return String(str).replace(/[&<>'"]/g, tag => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      "'": '&#39;',
+      '"': '&quot;'
+    }[tag] || tag));
+}
+
+function formatTwitchMessage(message, emotes) {
+  if (!emotes) return escapeHTML(message);
+  const replacements = [];
+  for (const id in emotes) {
+    emotes[id].forEach(pos => {
+      const [start, end] = pos.split('-');
+      replacements.push({ id, start: parseInt(start), end: parseInt(end) });
+    });
+  }
+  replacements.sort((a, b) => a.start - b.start);
+  
+  let html = '';
+  let lastIndex = 0;
+  for (const rep of replacements) {
+    if (rep.start < lastIndex) continue;
+    html += escapeHTML(message.substring(lastIndex, rep.start));
+    html += `<img src="https://static-cdn.jtvnw.net/emoticons/v2/${rep.id}/default/dark/1.0" style="vertical-align: middle; height: 1.5em; display: inline-block;">`;
+    lastIndex = rep.end + 1;
+  }
+  html += escapeHTML(message.substring(lastIndex));
+  return html;
+}
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
@@ -35,7 +68,7 @@ io.on('connection', (socket) => {
           socket.emit('message', {
             platform: 'twitch',
             user: tags['display-name'] || tags.username,
-            message,
+            message: formatTwitchMessage(message, tags.emotes),
             color: tags.color || '#9146FF'
           });
         });
@@ -52,7 +85,7 @@ io.on('connection', (socket) => {
           socket.emit('message', {
             platform: 'tiktok',
             user: data.uniqueId || 'TikToker',
-            message: data.comment || '',
+            message: escapeHTML(data.comment || ''),
             color: '#00F2FE'
           });
         });
@@ -61,7 +94,7 @@ io.on('connection', (socket) => {
           socket.emit('message', {
             platform: 'tiktok',
             user: data.uniqueId,
-            message: `🎁 ${data.giftName} x${data.repeatCount}`,
+            message: `🎁 ${escapeHTML(data.giftName)} x${data.repeatCount}`,
             color: '#00F2FE'
           });
         });
@@ -87,11 +120,17 @@ io.on('connection', (socket) => {
         ytChat = new LiveChat(ytOptions);
 
         ytChat.on('chat', (chatItem) => {
-          const messageText = (chatItem.message || []).map(m => m.text || m.emojiText || m.alt || '').join('');
+          const messageHtml = (chatItem.message || []).map(m => {
+            if (m.url) {
+              return `<img src="${m.url}" style="vertical-align: middle; height: 1.5em; display: inline-block;" alt="${escapeHTML(m.alt || m.emojiText || '')}">`;
+            }
+            return escapeHTML(m.text || m.emojiText || '');
+          }).join('');
+
           socket.emit('message', {
             platform: 'youtube',
             user: chatItem.author?.name || 'YouTuber',
-            message: messageText,
+            message: messageHtml,
             color: '#FF0000'
           });
         });
