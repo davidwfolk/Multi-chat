@@ -6,31 +6,82 @@
   <title>Multi-Platform Stream Chat</title>
   <script src="/socket.io/socket.io.js"></script>
   <style>
-    body { margin:0; background:#111; color:#fff; font-family:Arial, sans-serif; }
-    #setup { padding:15px; background:#222; text-align:center; }
-    input { padding:8px; margin:5px; width:180px; border-radius:6px; border:none; }
-    button { padding:8px 16px; background:#9146FF; color:white; border:none; border-radius:6px; cursor:pointer; }
-    #chat { height:calc(100vh - 70px); overflow-y:auto; padding:10px; }
-    @keyframes slideIn {
-      from { opacity: 0; transform: translateY(15px); }
-      to { opacity: 1; transform: translateY(0); }
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap');
+
+    body { margin:0; background:#0f172a; color:#f8fafc; font-family:'Outfit', sans-serif; }
+    
+    body::before {
+      content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+      background: radial-gradient(circle at 50% 50%, rgba(145, 70, 255, 0.15), transparent 50%),
+                  radial-gradient(circle at 80% 20%, rgba(255, 0, 80, 0.15), transparent 40%);
+      z-index: -1; pointer-events: none;
     }
-    .message { margin:6px 0; padding:8px 12px; border-radius:10px; max-width:85%; clear:both; animation: slideIn 0.3s ease-out forwards; }
-    .twitch { background:#9146ff22; border-left:5px solid #9146FF; }
-    .youtube { background:#ff000022; border-left:5px solid #FF0000; }
-    .kick { background:#00ff0022; border-left:5px solid #00FF00; }
-    .tiktok { background:#00f2fe22; border-left:5px solid #00F2FE; }
-    .user { font-weight:bold; margin-right:8px; }
-    .platform { font-size:0.8em; opacity:0.8; margin-right:8px; }
+
+    #setup {
+      padding:20px; background:rgba(30, 41, 59, 0.7); backdrop-filter:blur(12px);
+      border-bottom:1px solid rgba(255,255,255,0.1); text-align:center;
+      display:flex; flex-wrap:wrap; justify-content:center; gap:15px; align-items:flex-end;
+      box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);
+      position: sticky; top: 0; z-index: 100;
+    }
+    
+    label { display:flex; flex-direction:column; font-size:0.9em; font-weight:600; text-align:left; gap:6px; color:#cbd5e1; }
+
+    input {
+      padding:10px 16px; width:180px; border-radius:8px; border:1px solid rgba(255,255,255,0.1);
+      background:rgba(15, 23, 42, 0.6); color:white; font-family:'Outfit', sans-serif; transition:all 0.2s;
+    }
+    input:focus { outline:none; border-color:#9146FF; box-shadow:0 0 0 2px rgba(145,70,255,0.3); }
+
+    button {
+      padding:10px 24px; background:linear-gradient(135deg, #9146FF 0%, #6d28d9 100%);
+      color:white; border:none; border-radius:8px; font-weight:600; font-family:'Outfit', sans-serif;
+      cursor:pointer; transition:transform 0.1s, box-shadow 0.2s; box-shadow:0 4px 12px rgba(145,70,255,0.3);
+    }
+    button:hover { transform:translateY(-1px); box-shadow:0 6px 16px rgba(145,70,255,0.4); }
+
+    #chat { padding:20px 30px; display:flex; flex-direction:column; min-height: 100vh; padding-bottom: 50px; }
+    ::-webkit-scrollbar { width:8px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.2); border-radius:4px; }
+    ::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,0.3); }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(20px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .message {
+      margin:8px 0; padding:12px 18px; border-radius:12px; max-width:80%; clear:both;
+      animation:slideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+      backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,0.05);
+      box-shadow:0 4px 15px rgba(0,0,0,0.1); display:flex; align-items:flex-start; gap:10px; line-height:1.4;
+    }
+
+    .platform-icon { width:20px; height:20px; flex-shrink:0; margin-top:2px; }
+    .message-content { flex: 1; }
+    .user { font-weight:700; font-size:0.95em; text-shadow:0 1px 2px rgba(0,0,0,0.5); margin-right:4px; }
+    .text { font-size:1em; font-weight:400; opacity:0.95; word-wrap:break-word; line-height: 1.5; }
+
+    .twitch { background:linear-gradient(135deg, rgba(145,70,255,0.15) 0%, rgba(145,70,255,0.05) 100%); border-left:4px solid #9146FF; }
+    .youtube { background:linear-gradient(135deg, rgba(255,0,0,0.15) 0%, rgba(255,0,0,0.05) 100%); border-left:4px solid #FF0000; }
+    .kick { background:linear-gradient(135deg, rgba(0,255,0,0.1) 0%, rgba(0,255,0,0.02) 100%); border-left:4px solid #53FC18; }
+    .tiktok { background:linear-gradient(135deg, rgba(0,242,254,0.15) 0%, rgba(0,242,254,0.05) 100%); border-left:4px solid #00F2FE; }
+
+    .system-msg {
+      background: linear-gradient(135deg, rgba(255, 215, 0, 0.15) 0%, rgba(255, 215, 0, 0.05) 100%) !important;
+      border: 1px solid rgba(255, 215, 0, 0.3) !important;
+      box-shadow: 0 0 15px rgba(255, 215, 0, 0.1) !important;
+    }
   </style>
 </head>
 <body>
   <div id="setup">
-    Twitch <input id="twitch" placeholder="twitchname">
-    YouTube <input id="youtube" placeholder="@handle or video ID">
-    Kick <input id="kick" placeholder="kickname">
-    TikTok <input id="tiktok" placeholder="tiktokname (no @)">
-    <button onclick="save()">Save & Connect</button>
+    <label>Twitch <input id="twitch" placeholder="twitchname"></label>
+    <label>YouTube <input id="youtube" placeholder="@handle or video ID"></label>
+    <label>Kick <input id="kick" placeholder="kickname"></label>
+    <label>TikTok <input id="tiktok" placeholder="tiktokname (no @)"></label>
+    <button onclick="save()" style="height:40px; margin-bottom:2px;">Save & Connect</button>
   </div>
   <div id="chat"></div>
 
@@ -61,14 +112,30 @@
       appendMessage(data);
     });
 
+    const icons = {
+      twitch: `<svg class="platform-icon" viewBox="0 0 24 24" fill="#9146FF"><path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/></svg>`,
+      youtube: `<svg class="platform-icon" viewBox="0 0 24 24" fill="#FF0000"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>`,
+      tiktok: `<svg class="platform-icon" viewBox="0 0 24 24" fill="#00F2FE"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.04-.1z"/></svg>`,
+      kick: `<svg class="platform-icon" viewBox="0 0 24 24" fill="#53FC18"><rect width="24" height="24" rx="4" fill="#111"/><text x="4" y="18" font-family="Arial" font-weight="bold" font-size="18" fill="#53FC18">K</text></svg>`
+    };
+
     function appendMessage(data) {
       const chatDiv = document.getElementById('chat');
-      const isScrolledToBottom = chatDiv.scrollHeight - chatDiv.clientHeight <= chatDiv.scrollTop + 50;
+      const isScrolledToBottom = (window.innerHeight + window.scrollY) >= (document.body.offsetHeight - 60);
 
       const div = document.createElement('div');
       div.className = `message ${data.platform}`;
-      div.innerHTML = `<span class="platform">[${data.platform.toUpperCase()}]</span>
-        <span class="user" style="color:${data.color}">${data.user}:</span> ${data.message}`;
+      if (data.isSystem) div.classList.add('system-msg');
+      
+      div.innerHTML = `
+        ${icons[data.platform] || ''}
+        <div class="message-content">
+          <span class="text">
+            <span class="user" style="color:${data.color}">${data.user}:</span>
+            ${data.message}
+          </span>
+        </div>
+      `;
       chatDiv.appendChild(div);
 
       // Keep only the latest 400 messages to save memory
@@ -77,7 +144,7 @@
       }
 
       if (isScrolledToBottom) {
-        div.scrollIntoView({behavior:'smooth'});
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
       }
     }
 

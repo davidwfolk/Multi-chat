@@ -72,6 +72,16 @@ io.on('connection', (socket) => {
             color: tags.color || '#9146FF'
           });
         });
+
+        twitchClient.on('subscription', (channel, username, method, message, userstate) => {
+          socket.emit('message', { platform: 'twitch', user: username, message: `🎉 Just subscribed!`, color: '#9146FF', isSystem: true });
+        });
+        twitchClient.on('resub', (channel, username, months, message, userstate, methods) => {
+          socket.emit('message', { platform: 'twitch', user: username, message: `🎉 Resubscribed for ${months} months!`, color: '#9146FF', isSystem: true });
+        });
+        twitchClient.on('subgift', (channel, username, streakMonths, recipient, methods, userstate) => {
+          socket.emit('message', { platform: 'twitch', user: username, message: `🎁 Gifted a sub to ${recipient}!`, color: '#9146FF', isSystem: true });
+        });
       } catch (e) { console.error('Twitch error:', e); }
     }
 
@@ -95,8 +105,17 @@ io.on('connection', (socket) => {
             platform: 'tiktok',
             user: data.uniqueId,
             message: `🎁 ${escapeHTML(data.giftName)} x${data.repeatCount}`,
-            color: '#00F2FE'
+            color: '#00F2FE',
+            isSystem: true
           });
+        });
+
+        tiktokConnector.on('follow', (data) => {
+          socket.emit('message', { platform: 'tiktok', user: data.uniqueId, message: `👤 Followed the channel!`, color: '#00F2FE', isSystem: true });
+        });
+
+        tiktokConnector.on('subscribe', (data) => {
+          socket.emit('message', { platform: 'tiktok', user: data.uniqueId, message: `🎉 Subscribed to the channel!`, color: '#00F2FE', isSystem: true });
         });
 
         tiktokConnector.connect()
@@ -120,18 +139,34 @@ io.on('connection', (socket) => {
         ytChat = new LiveChat(ytOptions);
 
         ytChat.on('chat', (chatItem) => {
-          const messageHtml = (chatItem.message || []).map(m => {
-            if (m.url) {
-              return `<img src="${m.url}" style="vertical-align: middle; height: 1.5em; display: inline-block;" alt="${escapeHTML(m.alt || m.emojiText || '')}">`;
-            }
-            return escapeHTML(m.text || m.emojiText || '');
-          }).join('');
+          let messageHtml = '';
+          if (Array.isArray(chatItem.message)) {
+            chatItem.message.forEach(part => {
+              if (part.url) {
+                messageHtml += `<img src="${part.url}" alt="${part.alt || ''}" style="vertical-align: middle; height: 1.5em; display: inline-block;">`;
+              } else if (part.text) {
+                messageHtml += escapeHTML(part.text);
+              }
+            });
+          }
+
+          let isSystem = false;
+          let systemPrefix = '';
+
+          if (chatItem.superchat) {
+            isSystem = true;
+            systemPrefix = `💎 <b>SuperChat ${escapeHTML(chatItem.superchat.amount)}</b>: `;
+          } else if (chatItem.isMembership) {
+            isSystem = true;
+            systemPrefix = `🌟 <b>New Member!</b> `;
+          }
 
           socket.emit('message', {
             platform: 'youtube',
             user: chatItem.author?.name || 'YouTuber',
-            message: messageHtml,
-            color: '#FF0000'
+            message: systemPrefix + messageHtml,
+            color: '#FF0000',
+            isSystem: isSystem
           });
         });
 
