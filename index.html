@@ -8,8 +8,53 @@
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap');
 
-    body { margin:0; background:#0f172a; color:#f8fafc; font-family:'Outfit', sans-serif; }
+    html, body { 
+      margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden !important; overscroll-behavior: none; 
+    }
+    * { box-sizing: border-box; }
+    body { background:#0f172a; color:#f8fafc; font-family:'Outfit', sans-serif; display: flex; flex-direction: column; }
     
+    #main-content {
+      flex: 1; display: flex; flex-direction: row; overflow: hidden; align-items: stretch; min-height: 0; min-width: 0;
+    }
+
+    #alerts-resizer { display: none; /* hidden on desktop */ }
+
+    @media (max-width: 768px) {
+      #main-content {
+        flex-direction: column;
+      }
+      #alerts-panel {
+        width: 100% !important;
+        border-left: none !important;
+        border-top: 1px solid rgba(255,255,255,0.1) !important;
+        height: 350px; /* Default height */
+      }
+      #alerts-resizer {
+        display: block;
+        width: 100%;
+        height: 20px;
+        background: rgba(30, 41, 59, 0.9);
+        border-top: 1px solid rgba(255,255,255,0.1);
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        cursor: ns-resize;
+        flex-shrink: 0;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      #alerts-resizer::after {
+        content: '';
+        width: 40px;
+        height: 4px;
+        background: rgba(255,255,255,0.3);
+        border-radius: 4px;
+      }
+    }
+
     body::before {
       content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
       background: radial-gradient(circle at 50% 50%, rgba(145, 70, 255, 0.15), transparent 50%),
@@ -18,13 +63,19 @@
     }
 
     #setup {
-      padding:20px; background:rgba(30, 41, 59, 0.7); backdrop-filter:blur(12px);
+      padding:15px 20px; background:rgba(30, 41, 59, 0.7); backdrop-filter:blur(12px);
       border-bottom:1px solid rgba(255,255,255,0.1); text-align:center;
-      display:flex; flex-wrap:wrap; justify-content:center; gap:15px; align-items:flex-end;
+      display:flex; flex-direction:column; align-items:center;
       box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);
-      position: sticky; top: 0; z-index: 100;
+      flex-shrink: 0; z-index: 100;
     }
     
+    .setup-header { display: flex; gap: 10px; justify-content: center; width: 100%; }
+    
+    #inputs-container {
+      display: none; flex-wrap: wrap; justify-content: center; gap: 15px; width: 100%; margin-top: 15px; align-items: flex-end;
+    }
+
     label { display:flex; flex-direction:column; font-size:0.9em; font-weight:600; text-align:left; gap:6px; color:#cbd5e1; }
 
     input {
@@ -40,7 +91,22 @@
     }
     button:hover { transform:translateY(-1px); box-shadow:0 6px 16px rgba(145,70,255,0.4); }
 
-    #chat { padding:20px 30px; display:flex; flex-direction:column; min-height: 100vh; padding-bottom: 50px; }
+    #chat { flex:1; padding:20px 30px; display:flex; flex-direction:column; overflow-y:auto; min-height: 0; min-width: 0; }
+    
+    #alerts-panel {
+      width: 350px; flex-shrink: 0; display: none; flex-direction: column; 
+      background: rgba(15, 23, 42, 0.5); border-left: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    @media (min-width: 769px) {
+      #alerts-panel {
+        height: 100% !important;
+      }
+    }
+    #alerts-container {
+      flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; min-height: 0;
+    }
+    #alerts-panel.active { display: flex; }
     ::-webkit-scrollbar { width:8px; }
     ::-webkit-scrollbar-track { background:transparent; }
     ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.2); border-radius:4px; }
@@ -77,19 +143,45 @@
 </head>
 <body>
   <div id="setup">
-    <label>Twitch <input id="twitch" placeholder="twitchname"></label>
-    <label>YouTube <input id="youtube" placeholder="@handle or video ID"></label>
-    <label>Kick <input id="kick" placeholder="kickname"></label>
-    <label>TikTok <input id="tiktok" placeholder="tiktokname (no @)"></label>
-    <button onclick="save()" style="height:40px; margin-bottom:2px;">Save & Connect</button>
+    <div class="setup-header">
+      <button onclick="toggleSettings()" style="height:40px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2);">⚙️ Settings</button>
+      <button onclick="toggleAlertsColumn()" id="filterBtn" style="height:40px; background:linear-gradient(135deg, #ffd700 0%, #b8860b 100%); color:#000;">Show Alerts Column</button>
+    </div>
+    
+    <div id="inputs-container">
+      <label>Twitch <input id="twitch" placeholder="twitchname"></label>
+      <label>YouTube <input id="youtube" placeholder="@handle or video ID"></label>
+      <label>Kick <input id="kick" placeholder="kickname"></label>
+      <label>TikTok <input id="tiktok" placeholder="tiktokname (no @)"></label>
+      <button onclick="save()" style="height:40px; margin-bottom:2px;">Save & Connect</button>
+    </div>
   </div>
-  <div id="chat"></div>
+  <div id="main-content">
+    <div id="chat"></div>
+    <div id="alerts-panel">
+      <div id="alerts-resizer"></div>
+      <div id="alerts-container"></div>
+    </div>
+  </div>
 
   <script>
     const params = new URLSearchParams(location.search);
+    let hasSavedAccounts = false;
     ['twitch','youtube','kick','tiktok'].forEach(p => {
-      if (params.get(p)) document.getElementById(p).value = params.get(p);
+      if (params.get(p)) {
+        document.getElementById(p).value = params.get(p);
+        hasSavedAccounts = true;
+      }
     });
+
+    if (!hasSavedAccounts) {
+      document.getElementById('inputs-container').style.display = 'flex';
+    }
+
+    function toggleSettings() {
+      const container = document.getElementById('inputs-container');
+      container.style.display = (container.style.display === 'none' || container.style.display === '') ? 'flex' : 'none';
+    }
 
     function save() {
       const t = document.getElementById('twitch').value.trim();
@@ -97,6 +189,19 @@
       const k = document.getElementById('kick').value.trim();
       const tt = document.getElementById('tiktok').value.trim();
       location.href = `?twitch=${t}&youtube=${y}&kick=${k}&tiktok=${tt}`;
+    }
+
+    function toggleAlertsColumn() {
+      const panel = document.getElementById('alerts-panel');
+      panel.classList.toggle('active');
+      const isActive = panel.classList.contains('active');
+      
+      const btn = document.getElementById('filterBtn');
+      if (isActive) {
+        btn.innerText = 'Hide Alerts Column';
+      } else {
+        btn.innerText = 'Show Alerts Column';
+      }
     }
 
     const socket = io();
@@ -121,7 +226,8 @@
 
     function appendMessage(data) {
       const chatDiv = document.getElementById('chat');
-      const isScrolledToBottom = (window.innerHeight + window.scrollY) >= (document.body.offsetHeight - 60);
+      // Increase tolerance to 200px so bursts of chat don't break the auto-scroll
+      const isScrolledToBottom = chatDiv.scrollHeight - chatDiv.clientHeight <= chatDiv.scrollTop + 200;
 
       const div = document.createElement('div');
       div.className = `message ${data.platform}`;
@@ -138,14 +244,71 @@
       `;
       chatDiv.appendChild(div);
 
+      if (data.isSystem) {
+        const alertsContainer = document.getElementById('alerts-container');
+        const clone = div.cloneNode(true);
+        alertsContainer.appendChild(clone);
+        while (alertsContainer.children.length > 100) {
+          alertsContainer.removeChild(alertsContainer.firstChild);
+        }
+        const alertsScrolled = alertsContainer.scrollHeight - alertsContainer.clientHeight <= alertsContainer.scrollTop + 150;
+        // Remove smooth scroll to prevent shaking
+        if (alertsScrolled) alertsContainer.scrollTo(0, alertsContainer.scrollHeight);
+      }
+
       // Keep only the latest 400 messages to save memory
       while (chatDiv.children.length > 400) {
         chatDiv.removeChild(chatDiv.firstChild);
       }
 
       if (isScrolledToBottom) {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        // Remove smooth scroll to prevent shaking during fast chat bursts
+        chatDiv.scrollTo(0, chatDiv.scrollHeight);
       }
+    }
+
+    // Resize logic for alerts panel
+    const resizer = document.getElementById('alerts-resizer');
+    const alertsPanel = document.getElementById('alerts-panel');
+    let isResizing = false;
+    let startY = 0;
+    let startHeight = 0;
+
+    resizer.addEventListener('touchstart', initResize, { passive: false });
+    resizer.addEventListener('mousedown', initResize);
+
+    function initResize(e) {
+      e.preventDefault();
+      isResizing = true;
+      startY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+      startHeight = alertsPanel.offsetHeight;
+      
+      document.addEventListener('touchmove', resize, { passive: false });
+      document.addEventListener('mousemove', resize);
+      document.addEventListener('touchend', stopResize);
+      document.addEventListener('mouseup', stopResize);
+    }
+
+    function resize(e) {
+      if (!isResizing) return;
+      e.preventDefault(); 
+      const currentY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+      const dy = startY - currentY; // dragging UP increases height on mobile
+      
+      let newHeight = startHeight + dy;
+      if (newHeight < 100) newHeight = 100;
+      if (newHeight > window.innerHeight - 150) newHeight = window.innerHeight - 150;
+      
+      alertsPanel.style.height = newHeight + 'px';
+      alertsPanel.style.maxHeight = 'none'; // Ensure inline style overrides CSS
+    }
+
+    function stopResize() {
+      isResizing = false;
+      document.removeEventListener('touchmove', resize);
+      document.removeEventListener('mousemove', resize);
+      document.removeEventListener('touchend', stopResize);
+      document.removeEventListener('mouseup', stopResize);
     }
 
     // Frontend Kick logic
