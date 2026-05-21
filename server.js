@@ -52,9 +52,12 @@ app.get('/', (req, res) => {
 
 io.on('connection', (socket) => {
   let twitchClient, tiktokConnector, ytChat;
+  let tiktokReconnectTimeout = null;
+  let isSocketConnected = true;
 
   socket.on('subscribe', (channels) => {
     // Clean up old connections safely for this user
+    clearTimeout(tiktokReconnectTimeout);
     try { twitchClient?.disconnect(); } catch(e) {}
     try { tiktokConnector?.disconnect(); } catch(e) {}
     try { if (ytChat) ytChat.stop(); } catch(e) {}
@@ -118,9 +121,34 @@ io.on('connection', (socket) => {
           socket.emit('message', { platform: 'tiktok', user: data.uniqueId, message: `🎉 Subscribed to the channel!`, color: '#00F2FE', isSystem: true });
         });
 
-        tiktokConnector.connect()
-          .then(() => console.log(`Connected to TikTok: ${username}`))
-          .catch(err => console.error('TikTok connection failed', err));
+        const backoffDelays = [30000, 45000, 60000, 60000, 120000];
+        let attempt = 0;
+
+        const connectTikTok = () => {
+          if (!isSocketConnected) return;
+          
+          tiktokConnector.connect()
+            .then(() => {
+              console.log(`Connected to TikTok: ${username}`);
+              attempt = 0; // Reset on success
+            })
+            .catch(err => {
+              console.error(`TikTok connection failed (Attempt ${attempt + 1}):`, err.message || err);
+              
+              if (attempt < backoffDelays.length && isSocketConnected) {
+                const delay = backoffDelays[attempt];
+                console.log(`Retrying TikTok in ${delay / 1000} seconds...`);
+                socket.emit('message', { platform: 'tiktok', user: 'System', message: `TikTok connection failed. Retrying in ${delay / 1000} seconds...`, color: '#00F2FE', isSystem: true });
+                
+                tiktokReconnectTimeout = setTimeout(connectTikTok, delay);
+                attempt++;
+              } else if (isSocketConnected) {
+                socket.emit('message', { platform: 'tiktok', user: 'System', message: `TikTok connection failed after 5 attempts. Halting to prevent IP block.`, color: '#FF0000', isSystem: true });
+              }
+            });
+        };
+        
+        connectTikTok();
       } catch (e) {
         console.error('TikTok proxy error:', e);
       }
@@ -181,6 +209,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    isSocketConnected = false;
+    clearTimeout(tiktokReconnectTimeout);
     try { twitchClient?.disconnect(); } catch(e) {}
     try { tiktokConnector?.disconnect(); } catch(e) {}
     try { if (ytChat) ytChat.stop(); } catch(e) {}
