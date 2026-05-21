@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Multi-Platform Stream Chat</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body { margin:0; background:#111; color:#fff; font-family:Arial, sans-serif; }
+    #setup { padding:15px; background:#222; text-align:center; }
+    input { padding:8px; margin:5px; width:180px; border-radius:6px; border:none; }
+    button { padding:8px 16px; background:#9146FF; color:white; border:none; border-radius:6px; cursor:pointer; }
+    #chat { height:calc(100vh - 70px); overflow-y:auto; padding:10px; }
+    .message { margin:6px 0; padding:8px 12px; border-radius:10px; max-width:85%; clear:both; }
+    .twitch { background:#9146ff22; border-left:5px solid #9146FF; }
+    .youtube { background:#ff000022; border-left:5px solid #FF0000; }
+    .kick { background:#00ff0022; border-left:5px solid #00FF00; }
+    .tiktok { background:#00f2fe22; border-left:5px solid #00F2FE; }
+    .user { font-weight:bold; margin-right:8px; }
+    .platform { font-size:0.8em; opacity:0.8; margin-right:8px; }
+  </style>
+</head>
+<body>
+  <div id="setup">
+    Twitch <input id="twitch" placeholder="twitchname">
+    YouTube <input id="youtube" placeholder="@handle or video ID">
+    Kick <input id="kick" placeholder="kickname">
+    TikTok <input id="tiktok" placeholder="tiktokname (no @)">
+    <button onclick="save()">Save & Connect</button>
+  </div>
+  <div id="chat"></div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    ['twitch','youtube','kick','tiktok'].forEach(p => {
+      if (params.get(p)) document.getElementById(p).value = params.get(p);
+    });
+
+    function save() {
+      const t = document.getElementById('twitch').value.trim();
+      const y = document.getElementById('youtube').value.trim();
+      const k = document.getElementById('kick').value.trim();
+      const tt = document.getElementById('tiktok').value.trim();
+      location.href = `?twitch=${t}&youtube=${y}&kick=${k}&tiktok=${tt}`;
+    }
+
+    const socket = io();
+
+    // Subscribe backend connections
+    socket.emit('subscribe', {
+      twitch: params.get('twitch'),
+      youtube: params.get('youtube'),
+      tiktok: params.get('tiktok')
+    });
+
+    socket.on('message', data => {
+      appendMessage(data);
+    });
+
+    function appendMessage(data) {
+      const chatDiv = document.getElementById('chat');
+      const isScrolledToBottom = chatDiv.scrollHeight - chatDiv.clientHeight <= chatDiv.scrollTop + 50;
+
+      const div = document.createElement('div');
+      div.className = `message ${data.platform}`;
+      div.innerHTML = `<span class="platform">[${data.platform.toUpperCase()}]</span>
+        <span class="user" style="color:${data.color}">${data.user}:</span> ${data.message.replace(/</g,'&lt;')}`;
+      chatDiv.appendChild(div);
+
+      if (isScrolledToBottom) {
+        div.scrollIntoView({behavior:'smooth'});
+      }
+    }
+
+    // Frontend Kick logic
+    const kickUser = params.get('kick');
+    if (kickUser && kickUser.trim()) {
+      fetch(`https://kick.com/api/v2/channels/${kickUser.trim()}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.chatroom) {
+            const chatroomId = data.chatroom.id;
+            const ws = new WebSocket('wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=8.4.0-rc2&flash=false');
+            
+            ws.onopen = () => {
+              console.log(`Connected to Kick chat: ${kickUser}`);
+              ws.send(JSON.stringify({
+                event: 'pusher:subscribe',
+                data: { auth: '', channel: `chatrooms.${chatroomId}.v2` }
+              }));
+            };
+
+            ws.onmessage = (event) => {
+              const msg = JSON.parse(event.data);
+              if (msg.event === 'App\\Events\\ChatMessageEvent') {
+                const chatData = JSON.parse(msg.data);
+                appendMessage({
+                  platform: 'kick',
+                  user: chatData.sender.username,
+                  message: chatData.content,
+                  color: chatData.sender.identity.color || '#00FF00'
+                });
+              }
+            };
+
+            ws.onerror = (e) => console.error('Kick WS error:', e);
+          }
+        })
+        .catch(err => console.error('Kick connection error:', err));
+    }
+  </script>
+</body>
+</html>
