@@ -4,7 +4,6 @@ const socketIo = require('socket.io');
 const tmi = require('tmi.js');
 const { WebcastPushConnection } = require('tiktok-live-connector');
 const fetch = require('node-fetch');
-const { LiveChat } = require('youtube-chat');
 
 function escapeHTML(str) {
   return String(str).replace(/[&<>'"]/g, tag => ({
@@ -53,14 +52,15 @@ app.get('/', (req, res) => {
 io.on('connection', (socket) => {
   let twitchClient, tiktokConnector, ytChat;
   let tiktokReconnectTimeout = null;
+  let ytPollingTimeout = null;
   let isSocketConnected = true;
 
   socket.on('subscribe', (channels) => {
     // Clean up old connections safely for this user
     clearTimeout(tiktokReconnectTimeout);
+    clearTimeout(ytPollingTimeout);
     try { twitchClient?.disconnect(); } catch(e) {}
     try { tiktokConnector?.disconnect(); } catch(e) {}
-    try { if (ytChat) ytChat.stop(); } catch(e) {}
 
     // Twitch
     if (channels.twitch?.trim()) {
@@ -154,66 +154,112 @@ io.on('connection', (socket) => {
       }
     }
 
-    // YouTube – safe via youtube-chat
+    // YouTube – via Official Data API v3
     if (channels.youtube?.trim()) {
-      try {
-        let handleOrId = channels.youtube.trim();
-        // Assume handle if no prefix and not a channel ID format
-        if (!handleOrId.startsWith('@') && handleOrId.length < 24) {
-          handleOrId = '@' + handleOrId;
+      const ytApiKey = channels.youtubeApiKey?.trim();
+      const ytInput = channels.youtube.trim();
+
+      async function getLiveChatId() {
+        if (!ytApiKey) throw new Error("YouTube API Key is missing. Please add it to Settings.");
+        let videoId = null;
+
+        if (ytInput.length === 11 && !ytInput.startsWith('@')) {
+          videoId = ytInput;
+        } else {
+          let channelId = ytInput;
+          if (!ytInput.startsWith('UC')) {
+            let handle = ytInput.startsWith('@') ? ytInput : '@' + ytInput;
+            const res = await fetch(`https://youtube.googleapis.com/youtube/v3/channels?part=id&forHandle=${handle}&key=${ytApiKey}`);
+            const data = await res.json();
+            if (!data.items || data.items.length === 0) throw new Error("Could not find channel for handle " + handle);
+            channelId = data.items[0].id;
+          }
+          
+          const searchRes = await fetch(`https://youtube.googleapis.com/youtube/v3/search?part=id&channelId=${channelId}&eventType=live&type=video&key=${ytApiKey}`);
+          const searchData = await searchRes.json();
+          if (!searchData.items || searchData.items.length === 0) throw new Error("No active live stream found for this channel.");
+          videoId = searchData.items[0].id.videoId;
         }
 
-        const ytOptions = handleOrId.startsWith('@') ? { handle: handleOrId } : { channelId: handleOrId };
-        ytChat = new LiveChat(ytOptions);
-
-        ytChat.on('chat', (chatItem) => {
-          let messageHtml = '';
-          if (Array.isArray(chatItem.message)) {
-            chatItem.message.forEach(part => {
-              if (part.url) {
-                messageHtml += `<img src="${part.url}" alt="${part.alt || ''}" style="vertical-align: middle; height: 1.5em; display: inline-block;">`;
-              } else if (part.text) {
-                messageHtml += escapeHTML(part.text);
-              }
-            });
-          }
-
-          let isSystem = false;
-          let systemPrefix = '';
-
-          if (chatItem.superchat) {
-            isSystem = true;
-            systemPrefix = `💎 <b>SuperChat ${escapeHTML(chatItem.superchat.amount)}</b>: `;
-          } else if (chatItem.isMembership) {
-            isSystem = true;
-            systemPrefix = `🌟 <b>New Member!</b> `;
-          }
-
-          socket.emit('message', {
-            platform: 'youtube',
-            user: chatItem.author?.name || 'YouTuber',
-            message: systemPrefix + messageHtml,
-            color: '#FF0000',
-            isSystem: isSystem
-          });
-        });
-
-        ytChat.on('error', (err) => console.error('YouTube listener error:', err.message || err));
+        const vidRes = await fetch(`https://youtube.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${videoId}&key=${ytApiKey}`);
+        const vidData = await vidRes.json();
+        if (!vidData.items || vidData.items.length === 0) throw new Error("Video not found");
+        if (!vidData.items[0].liveStreamingDetails || !vidData.items[0].liveStreamingDetails.activeLiveChatId) throw new Error("Live chat not active on this video");
         
-        ytChat.start().then(ok => {
-          if(ok) console.log(`Connected to YouTube: ${handleOrId}`);
-        }).catch(err => console.error('YouTube start error:', err.message || err));
+        return vidData.items[0].liveStreamingDetails.activeLiveChatId;
+      }
 
-      } catch (e) { console.error('YouTube error:', e); }
+      async function pollYouTube(liveChatId, pageToken) {
+        if (!isSocketConnected) return;
+
+        let url = `https://youtube.googleapis.com/youtube/v3/liveChatMessages?liveChatId=${liveChatId}&part=snippet,authorDetails&key=${ytApiKey}`;
+        if (pageToken) url += `&pageToken=${pageToken}`;
+
+        try {
+          const res = await fetch(url);
+          const data = await res.json();
+          
+          if (data.error) {
+             console.error("YouTube API Error:", data.error.message);
+             socket.emit('message', { platform: 'youtube', user: 'System', message: `YouTube API Error: ${data.error.message}`, color: '#FF0000', isSystem: true });
+             return;
+          }
+
+          if (pageToken && data.items) {
+             data.items.forEach(item => {
+               const snippet = item.snippet;
+               const author = item.authorDetails;
+               
+               let messageText = snippet.displayMessage;
+               let isSystem = false;
+               let systemPrefix = '';
+
+               if (snippet.type === 'superChatEvent') {
+                  isSystem = true;
+                  systemPrefix = `💎 <b>SuperChat ${escapeHTML(snippet.superChatDetails.amountDisplayString)}</b>: `;
+                  messageText = snippet.superChatDetails.userComment || '';
+               } else if (snippet.type === 'newSponsorEvent') {
+                  isSystem = true;
+                  systemPrefix = `🌟 <b>New Member!</b> `;
+               }
+
+               socket.emit('message', {
+                  platform: 'youtube',
+                  user: author.displayName || 'YouTuber',
+                  message: systemPrefix + escapeHTML(messageText),
+                  color: '#FF0000',
+                  isSystem: isSystem
+               });
+             });
+          }
+
+          const nextToken = data.nextPageToken || pageToken;
+          const delay = data.pollingIntervalMillis || 3000;
+          
+          ytPollingTimeout = setTimeout(() => pollYouTube(liveChatId, nextToken), delay);
+        } catch(e) {
+          console.error("YouTube poll error:", e);
+          ytPollingTimeout = setTimeout(() => pollYouTube(liveChatId, pageToken), 5000);
+        }
+      }
+
+      getLiveChatId().then(chatId => {
+         console.log("Connected to YouTube Live Chat");
+         socket.emit('message', { platform: 'youtube', user: 'System', message: `Successfully connected to YouTube Data API!`, color: '#FF0000', isSystem: true });
+         pollYouTube(chatId, null);
+      }).catch(err => {
+         console.error("YouTube start error:", err.message);
+         socket.emit('message', { platform: 'youtube', user: 'System', message: `YouTube Connection Error: ${err.message}`, color: '#FF0000', isSystem: true });
+      });
     }
   });
 
   socket.on('disconnect', () => {
     isSocketConnected = false;
     clearTimeout(tiktokReconnectTimeout);
+    clearTimeout(ytPollingTimeout);
     try { twitchClient?.disconnect(); } catch(e) {}
     try { tiktokConnector?.disconnect(); } catch(e) {}
-    try { if (ytChat) ytChat.stop(); } catch(e) {}
   });
 });
 
