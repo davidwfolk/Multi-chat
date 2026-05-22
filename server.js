@@ -192,11 +192,15 @@ io.on('connection', (socket) => {
       async function pollYouTube(liveChatId, pageToken) {
         if (!isSocketConnected) return;
 
-        let url = `https://youtube.googleapis.com/youtube/v3/liveChatMessages?liveChatId=${liveChatId}&part=snippet,authorDetails&key=${ytApiKey}`;
+        let url = `https://youtube.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${liveChatId}&part=snippet,authorDetails&key=${ytApiKey}`;
         if (pageToken) url += `&pageToken=${pageToken}`;
 
         try {
           const res = await fetch(url);
+          if (!res.ok) {
+             const errorText = await res.text();
+             throw new Error(`HTTP ${res.status}: ${errorText || 'Empty Response'}`);
+          }
           const data = await res.json();
           
           if (data.error) {
@@ -214,14 +218,14 @@ io.on('connection', (socket) => {
              }
 
              itemsToProcess.forEach(item => {
-               const snippet = item.snippet;
-               const author = item.authorDetails;
+               const snippet = item.snippet || {};
+               const author = item.authorDetails || {};
                
-               let messageText = snippet.displayMessage;
+               let messageText = snippet.displayMessage || '';
                let isSystem = false;
                let systemPrefix = '';
 
-               if (snippet.type === 'superChatEvent') {
+               if (snippet.type === 'superChatEvent' && snippet.superChatDetails) {
                   isSystem = true;
                   systemPrefix = `💎 <b>SuperChat ${escapeHTML(snippet.superChatDetails.amountDisplayString)}</b>: `;
                   messageText = snippet.superChatDetails.userComment || '';
@@ -246,6 +250,7 @@ io.on('connection', (socket) => {
           ytPollingTimeout = setTimeout(() => pollYouTube(liveChatId, nextToken), delay);
         } catch(e) {
           console.error("YouTube poll error:", e);
+          socket.emit('message', { platform: 'youtube', user: 'System', message: `Internal Error: ${e.message}`, color: '#FF0000', isSystem: true });
           ytPollingTimeout = setTimeout(() => pollYouTube(liveChatId, pageToken), 5000);
         }
       }
