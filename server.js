@@ -205,8 +205,15 @@ io.on('connection', (socket) => {
              return;
           }
 
-          if (pageToken && data.items) {
-             data.items.forEach(item => {
+          if (data.items) {
+             let itemsToProcess = data.items;
+             
+             // On the very first load (pageToken is null), only grab the last 10 messages to prevent flooding
+             if (!pageToken && itemsToProcess.length > 10) {
+                 itemsToProcess = itemsToProcess.slice(-10);
+             }
+
+             itemsToProcess.forEach(item => {
                const snippet = item.snippet;
                const author = item.authorDetails;
                
