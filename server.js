@@ -91,7 +91,7 @@ io.on('connection', (socket) => {
     // TikTok – via the direct connector
     if (channels.tiktok?.trim()) {
       try {
-        const username = channels.tiktok.trim().replace('@', '');
+        const username = channels.tiktok.trim().replace('@', '').toLowerCase();
         tiktokConnector = new WebcastPushConnection(username);
 
         tiktokConnector.on('chat', (data) => {
