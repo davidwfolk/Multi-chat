@@ -151,7 +151,6 @@
     <div id="inputs-container">
       <label>Twitch <input id="twitch" placeholder="twitchname"></label>
       <label>YouTube <input id="youtube" placeholder="@handle or video ID"></label>
-      <label>YouTube API Key <input id="youtube-api" type="password" placeholder="AIzaSy..."></label>
       <label>Kick <input id="kick" placeholder="kickname"></label>
       <label>TikTok <input id="tiktok" placeholder="tiktokname (no @)"></label>
       <button onclick="save()" style="height:40px; margin-bottom:2px;">Save & Connect</button>
@@ -168,9 +167,6 @@
   <script>
     const params = new URLSearchParams(location.search);
     let hasSavedAccounts = false;
-    
-    document.getElementById('youtube-api').value = localStorage.getItem('youtubeApiKey') || '';
-
     ['twitch','youtube','kick','tiktok'].forEach(p => {
       if (params.get(p)) {
         document.getElementById(p).value = params.get(p);
@@ -192,9 +188,6 @@
       const y = document.getElementById('youtube').value.trim();
       const k = document.getElementById('kick').value.trim();
       const tt = document.getElementById('tiktok').value.trim();
-      const ytApi = document.getElementById('youtube-api').value.trim();
-      
-      localStorage.setItem('youtubeApiKey', ytApi);
       location.href = `?twitch=${t}&youtube=${y}&kick=${k}&tiktok=${tt}`;
     }
 
@@ -217,8 +210,7 @@
     socket.emit('subscribe', {
       twitch: params.get('twitch'),
       youtube: params.get('youtube'),
-      tiktok: params.get('tiktok'),
-      youtubeApiKey: localStorage.getItem('youtubeApiKey') || ''
+      tiktok: params.get('tiktok')
     });
 
     socket.on('message', data => {
